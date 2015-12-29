@@ -1,12 +1,7 @@
 Error.stackTraceLimit = 100
 
 // Async stacks.
-//
-// Disabled for now as it cause a huge memory usage with
-// fs.createReadStream().
-// TODO: find a way to reenable.
-//
-// try { require('trace') } catch (_) {}
+try { require('trace') } catch (_) {}
 
 // Removes internal modules.
 try {
