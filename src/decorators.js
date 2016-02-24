@@ -345,3 +345,30 @@ export const mixin = MixIns => Class => {
 
   return Decorator
 }
+
+// ===================================================================
+
+export const synchronized = (target, name, descriptor) => {
+  const fn = descriptor.value
+  const queues = {}
+
+  function newFn (firstParam) {
+    const exec = () => fn.apply(this, arguments)
+
+    let queue = queues[firstParam]
+    queue = (
+      queue
+        ? queue.then(exec).catch(noop)
+        : new Promise(resolve => resolve(exec)).catch(noop)
+    ).then(() => {
+      if (queues[firstParam] === queue) {
+        delete queues[firstParam]
+      }
+    })
+
+    return queue
+  }
+
+  descriptor.value = newFn
+  return descriptor
+}
