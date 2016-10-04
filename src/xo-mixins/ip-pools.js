@@ -8,6 +8,7 @@ import {
   forEach,
   generateUnsecureToken,
   isEmpty,
+  mapToArray,
   streamToArray,
   throwFn
 } from '../utils'
@@ -24,16 +25,20 @@ const normalize = ({
   addresses,
   id = throwFn('id is a required field'),
   name = '',
-  networks
+  networks,
+  resourceSets
 }) => ({
   addresses,
   id,
   name,
-  networks
+  networks,
+  resourceSets
 })
 
 // ===================================================================
 
+// Note: an address cannot be in two different pools sharing a
+// network.
 export default class IpPools {
   constructor (xo) {
     this._store = null
@@ -79,35 +84,71 @@ export default class IpPools {
     })
   }
 
-  allocIpAddress (address, vifId) {
-    // FIXME: does not work correctly if the address is in multiple
-    // pools.
-    return this._getForAddress(address).then(ipPool => {
-      const data = ipPool.addresses[address]
-      const vifs = data.vifs || (data.vifs = [])
-      if (!includes(vifs, vifId)) {
-        vifs.push(vifId)
-        return this._save(ipPool)
-      }
-    })
-  }
+  allocIpAddresses (vifId, addAddresses, removeAddresses) {
+    const promises = []
+    return fromCallback(cb => {
+      const xoVif = this.getObject(vifId)
+      const xapi = this.getXapi(xoVif)
 
-  deallocIpAddress (address, vifId) {
-    return this._getForAddress(address).then(ipPool => {
-      const data = ipPool.addresses[address]
-      const vifs = data.vifs || (data.vifs = [])
-      const i = findIndex(vifs, id => id === vifId)
-      if (i !== -1) {
-        vifs.splice(i, 1)
-        return this._save(ipPool)
-      }
-    })
+      const vif = xapi.getObject(xoVif._xapiId)
+      const network = vif.$network
+      const networkId = network.$id
+
+      const allocAndSave = (() => {
+        const resourseSetId = xapi.getData(vif.VM, 'resourseSet')
+
+        return resourseSetId
+          ? (ipPool, allocations) => this._xo.allocateLimitsInResourceSet({
+            [`ipPool:${ipPool.id}`]: allocations
+          }).then(() => this._save(ipPool))
+          : ipPool => this._save(ipPool)
+      })()
+
+      const isVif = id => id === vifId
+
+      highland(this._store.createValueStream()).find(ipPool => {
+        const { addresses, networks } = ipPool
+        if (!(addresses && networks && includes(networks, networkId))) {
+          return false
+        }
+
+        let allocations = 0
+        let changed = false
+        forEach(removeAddresses, address => {
+          let vifs, i
+          if (
+            (vifs = addresses[address]) &&
+            (vifs = vifs.vifs) &&
+            (i = findIndex(vifs, isVif)) !== -1
+          ) {
+            vifs.splice(i, 1)
+            --allocations
+            changed = true
+          }
+        })
+        forEach(addAddresses, address => {
+          const data = addresses[address]
+          const vifs = data.vifs || (data.vifs = [])
+          if (!includes(vifs, vifId)) {
+            vifs.push(vifId)
+            ++allocations
+            changed = true
+          }
+        })
+
+        if (changed) {
+          allocations[ipPool.id] = allocations
+          promises.push(allocAndSave(ipPool, allocations))
+        }
+      }).toCallback(cb)
+    }).then(() => Promise.all(promises))
   }
 
   async updateIpPool (id, {
     addresses,
     name,
-    networks
+    networks,
+    resourceSets
   }) {
     const ipPool = await this.getIpPool(id)
 
@@ -133,6 +174,11 @@ export default class IpPools {
       ipPool.networks = networks
     }
 
+    // TODO: Implement patching like for addresses.
+    if (resourceSets) {
+      ipPool.resourceSets = resourceSets
+    }
+
     await this._save(ipPool)
   }
 
@@ -142,15 +188,6 @@ export default class IpPools {
       id = generateUnsecureToken(8)
     } while (await this._store.has(id))
     return id
-  }
-
-  _getForAddress (address) {
-    return fromCallback(cb => {
-      highland(this._store.createValueStream()).find(ipPool => {
-        const { addresses } = ipPool
-        return addresses && addresses[address]
-      }).pull(cb)
-    })
   }
 
   _save (ipPool) {

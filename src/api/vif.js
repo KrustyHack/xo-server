@@ -10,12 +10,12 @@ import {
 
 // TODO: move into vm and rename to removeInterface
 async function delete_ ({vif}) {
-  const { id } = vif
-  const dealloc = address => {
-    this.deallocIpAddress(address, id)::pCatch(noop)
-  }
-  forEach(vif.allowedIpv4Addresses, dealloc)
-  forEach(vif.allowedIpv6Addresses, dealloc)
+  this.allocIpAddresses(
+    vif.id,
+    vif.$network,
+    null,
+    vif.allowedIpv4Addresses.concat(vif.allowedIpv6Addresses)
+  )::pCatch(noop)
 
   await this.getXapi(vif).deleteVif(vif._xapiId)
 }
@@ -97,17 +97,15 @@ export async function set ({
     return
   }
 
-  const { id } = vif
-  const handle = ([ newAddresses, oldAddresses ]) => {
-    forEach(newAddresses, address => {
-      this.allocIpAddress(address, id)::pCatch(noop)
-    })
-    forEach(oldAddresses, address => {
-      this.deallocIpAddress(address, id)::pCatch(noop)
-    })
-  }
-  handle(diffItems(allowedIpv4Addresses, vif.allowedIpv4Addresses))
-  handle(diffItems(allowedIpv6Addresses, vif.allowedIpv6Addresses))
+  const [ addAddresses, removeAddresses ] = diffItems(
+    allowedIpv4Addresses.concat(allowedIpv6Addresses),
+    vif.allowedIpv4Addresses.concat(vif.allowedIpv6Addresses)
+  )
+  this.allocIpAddresses(
+    vif.id,
+    addAddresses,
+    removeAddresses
+  )::pCatch(noop)
 
   return this.getXapi(vif).editVif(vif._xapiId, {
     ipv4Allowed: allowedIpv4Addresses,

@@ -25,6 +25,14 @@ class NoSuchResourceSet extends NoSuchObject {
   }
 }
 
+const VM_RESOURCES = {
+  cpus: true,
+  disk: true,
+  disks: true,
+  memory: true,
+  vms: true
+}
+
 const computeVmResourcesUsage = vm => {
   const processed = {}
   let disks = 0
@@ -54,6 +62,7 @@ const computeVmResourcesUsage = vm => {
 
 const normalize = set => ({
   id: set.id,
+  ipPools: set.ipPools || [],
   limits: set.limits
     ? map(set.limits, limit => isObject(limit)
       ? limit
@@ -147,7 +156,8 @@ export default class {
     name = undefined,
     subjects = undefined,
     objects = undefined,
-    limits = undefined
+    limits = undefined,
+    ipPools = undefined
   }) {
     const set = await this.getResourceSet(id)
     if (name) {
@@ -177,6 +187,9 @@ export default class {
           total: quantity
         }
       })
+    }
+    if (ipPools) {
+      set.ipPools = ipPools
     }
 
     await this._save(set)
@@ -280,7 +293,9 @@ export default class {
     const sets = keyBy(await this.getAllResourceSets(), 'id')
     forEach(sets, ({ limits }) => {
       forEach(limits, (limit, id) => {
-        limit.available = limit.total
+        if (VM_RESOURCES[limit]) { // only reset VMs related limits
+          limit.available = limit.total
+        }
       })
     })
 
