@@ -8,7 +8,6 @@ import {
   forEach,
   generateUnsecureToken,
   isEmpty,
-  mapToArray,
   streamToArray,
   throwFn
 } from '../utils'

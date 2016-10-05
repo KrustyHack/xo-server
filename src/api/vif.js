@@ -1,5 +1,3 @@
-import forEach from 'lodash/forEach'
-
 import {
   diffItems,
   noop,
