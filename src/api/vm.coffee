@@ -1069,10 +1069,10 @@ createInterface = $coroutine ({
     ipv6_allowed: allowedIpv6Addresses
   })
 
-  alloc = (address) =>
-    @allocIpAddress(address, vif.$id)::pCatch(noop)
-  forEach(allowedIpv4Addresses, alloc)
-  forEach(allowedIpv6Addresses, alloc)
+  { push } = ipAddresses = []
+  push.apply(ipAddresses, allowedIpv4Addresses) if allowedIpv4Addresses
+  push.apply(ipAddresses, allowedIpv6Addresses) if allowedIpv6Addresses
+  pCatch.call(@allocIpAddresses(vif.$id, allo), noop) if ipAddresses.length
 
   return vif.$id
 
